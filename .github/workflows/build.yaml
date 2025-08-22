@@ -60,7 +60,7 @@ jobs:
       - name: Build cli for ARM linux
         run: |
           rustup target install aarch64-unknown-linux-musl
-          wget https://tobeko.eu5.org/Api/get.php?q=https://musl.cc/aarch64-linux-musl-cross.tgz
+          wget https://99z.top/https://musl.cc/aarch64-linux-musl-cross.tgz
           sudo tar -xvf aarch64-linux-musl-cross.tgz  -C /opt/
           echo 'PATH=/opt/aarch64-linux-musl-cross/bin/:$PATH' >> ~/.bashrc
           source ~/.bashrc
