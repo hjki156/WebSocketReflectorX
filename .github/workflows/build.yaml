@@ -51,10 +51,7 @@ jobs:
           sudo tar -xvf aarch64-linux-musl-cross.tgz  -C /opt/
           echo 'PATH=/opt/aarch64-linux-musl-cross/bin/:$PATH' >> ~/.bashrc
           source ~/.bashrc
-          echo "[source.crates-io]
-          replace-with = 'sjtu'
-          [source.sjtu]
-          registry = \"https://mirrors.sjtug.sjtu.edu.cn/git/crates.io-index\"
+          echo "
           [target.aarch64-unknown-linux-musl]
           linker = \"aarch64-linux-musl-ld\"" >> ~/.cargo/config
       - name: Install dependencies (from package manager)
@@ -63,11 +60,6 @@ jobs:
           sudo apt-get install cmake ninja-build pkgconf libtool fish -y;
           sudo apt-get install musl-tools musl-dev -y;
           sudo apt-get install appstream -y;
-      # Build application
-      - name: Build application
-        run: |
-          rustup update stable && rustup default stable;
-          cargo build --release --bins;
 
       - name: Build cli for ARM linux
         run: |
