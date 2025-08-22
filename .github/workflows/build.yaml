@@ -65,7 +65,7 @@ jobs:
         run: |
           rustup target install aarch64-unknown-linux-musl
           cargo install cross
-          cargo build --release -p wsrx --target aarch64-unknown-linux-musl;
+          cross build --release -p wsrx --target aarch64-unknown-linux-musl;
       
       # Deploy ARM
       - name: Compress musl Binaries
