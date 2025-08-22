@@ -58,7 +58,17 @@ jobs:
           cargo build --release --bins;
       - name: Build cli for ARM linux
         run: |
-          rustup target add arm-unknown-linux-gnueabi
+          rustup target install aarch64-unknown-linux-musl
+          wget https://musl.cc/aarch64-linux-musl-cross.tgz
+          sudo tar -xvf aarch64-linux-musl-cross.tgz  -C /opt/
+          echo 'PATH=/opt/aarch64-linux-musl-cross/bin/:$PATH' >> ~/.bashrc
+          source ~/.bashrc
+          echo "[source.crates-io]
+          replace-with = 'sjtu'
+          [source.sjtu]
+          registry = \"https://mirrors.sjtug.sjtu.edu.cn/git/crates.io-index\"
+          [target.aarch64-unknown-linux-musl]
+          linker = \"aarch64-linux-musl-ld\"" >> ~/.cargo/config
           cargo build --release -p wsrx --target arm-unknown-linux-musl;
       # Deploy ARM
       - name: Compress musl Binaries
