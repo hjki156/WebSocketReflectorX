@@ -64,23 +64,23 @@ jobs:
       - name: Build cli for ARM linux
         run: |
           rustup target install aarch64-unknown-linux-musl
-          cargo build --release -p wsrx --target arm-unknown-linux-musl;
+          cargo build --release -p wsrx --target aarch64-unknown-linux-musl;
       
       # Deploy ARM
       - name: Compress musl Binaries
-        run: tar --transform='s!.*/!!' -czvf wsrx-cli-linux-musl-arm.tar.gz target/arm-unknown-linux-musl/release/wsrx
+        run: tar --transform='s!.*/!!' -czvf wsrx-cli-linux-musl-arm.tar.gz target/aarch64-unknown-linux-musl/release/wsrx
         
       # Move files
       - name: move files
         run: |
-          mv wsrx-cli-linux-musl-arm.tar.gz wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-musl-arm.tar.gz
+          mv wsrx-cli-linux-musl-aarch64.tar.gz wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-musl-aarch64.tar.gz
       
       # Upload ARM
       - name: Upload ARM cli package
         uses: actions/upload-artifact@v4
         with:
-          name: wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-musl-arm.tar.gz
-          path: wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-musl-arm.tar.gz
+          name: wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-musl-aarch64.tar.gz
+          path: wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-musl-aarch64.tar.gz
 
       # Upload to github release
       - name: Release
@@ -88,7 +88,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-musl-x86_64.tar.gz
-            wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-gnu-x86_64.tar.gz
-            WebSocketReflectorX-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-gnu-x86_64.AppImage
-  
+            wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-musl-aarch64.tar.gz
+   
