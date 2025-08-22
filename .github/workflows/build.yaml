@@ -45,15 +45,15 @@ jobs:
           echo "Build at version $BUILD_VERSION"
           echo "BUILD_VERSION=$BUILD_VERSION" >> $GITHUB_OUTPUT
       # Install dependencies (from package manager)
-      - name: Install cross bin
-        run: |
-          wget https://99z.top/https://musl.cc/aarch64-linux-musl-cross.tgz
-          sudo tar -xvf aarch64-linux-musl-cross.tgz  -C /opt/
-          echo 'PATH=/opt/aarch64-linux-musl-cross/bin/:$PATH' >> ~/.bashrc
-          source ~/.bashrc
-          echo "
-          [target.aarch64-unknown-linux-musl]
-          linker = \"aarch64-linux-musl-ld\"" >> ~/.cargo/config
+      # - name: Install cross bin
+      #   run: |
+      #     wget https://99z.top/https://musl.cc/aarch64-linux-musl-cross.tgz
+      #     sudo tar -xvf aarch64-linux-musl-cross.tgz  -C /opt/
+      #     echo 'PATH=/opt/aarch64-linux-musl-cross/bin/:$PATH' >> ~/.bashrc
+      #     source ~/.bashrc
+      #     echo "
+      #     [target.aarch64-unknown-linux-musl]
+      #     linker = \"aarch64-linux-musl-ld\"" >> ~/.cargo/config
       - name: Install dependencies (from package manager)
         run: |
           sudo apt-get install libgl1-mesa-dev libxcb1-dev libxkbcommon-x11-dev libx11-xcb-dev libxcb-cursor0 libzstd-dev fuse libfuse-dev libwayland-dev -y;
@@ -64,6 +64,7 @@ jobs:
       - name: Build cli for ARM linux
         run: |
           rustup target install aarch64-unknown-linux-musl
+          cargo install cross
           cargo build --release -p wsrx --target aarch64-unknown-linux-musl;
       
       # Deploy ARM
