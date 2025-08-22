@@ -69,7 +69,7 @@ jobs:
       
       # Deploy ARM
       - name: Compress musl Binaries
-        run: tar --transform='s!.*/!!' -czvf wsrx-cli-linux-musl-arm.tar.gz target/aarch64-unknown-linux-musl/release/wsrx
+        run: tar --transform='s!.*/!!' -czvf wsrx-cli-linux-musl-aarch64.tar.gz target/aarch64-unknown-linux-musl/release/wsrx
         
       # Move files
       - name: move files
