@@ -137,19 +137,47 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # Install Android SDK & NDK with proper NDK version
+      # Install Android SDK & NDK with proper NDK version and configure environment
       - name: Install Android SDK and NDK
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: 11076708
           ndk-version: 25.1.8937393
-
-      # Set NDK version (required for cargo-apk)
-      - name: Set NDK version
+        # Use 'run:' section to configure environment variables after SDK/NDK installation
+      - name: Configure environment variables
         run: |
+          # Verify ANDROID_HOME is set by the action
+          if [ -z "$ANDROID_HOME" ]; then
+            echo "::error::ANDROID_HOME is not set by the setup-android action!"
+            exit 1
+          fi
+          echo "ANDROID_HOME is set to: $ANDROID_HOME"
+          
+          # Check if source.properties exists in ANDROID_HOME (SDK root)
+          if [ ! -f "$ANDROID_HOME/source.properties" ]; then
+            echo "::warning::source.properties not found in ANDROID_HOME ($ANDROID_HOME). This might cause issues."
+            # List contents for debugging
+            echo "Contents of ANDROID_HOME:"
+            ls -la "$ANDROID_HOME" || echo "Could not list ANDROID_HOME"
+          fi
+
+          # Set NDK environment variables pointing to the installed NDK version within ANDROID_HOME
           echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          
+          # Ensure ANDROID_HOME is correctly set in GITHUB_ENV (redundant but safe)
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          
+          # Explicitly unset the deprecated ANDROID_SDK_ROOT to prevent conflicts
+          # We set it to empty string in GITHUB_ENV to override any previous value
+          echo "ANDROID_SDK_ROOT=" >> $GITHUB_ENV
+          # Also unset it for the current shell session
+          unset ANDROID_SDK_ROOT
+          
+          # Optional: Debug output to verify variables
+          echo "::debug::ANDROID_HOME=$ANDROID_HOME"
+          echo "::debug::ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" # This will show the value from the *current* shell, which should be set now
+          echo "::debug::ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
 
       # Install system dependencies for GUI building
       - name: Install system dependencies
@@ -171,8 +199,7 @@ jobs:
       - name: Install Rust and Android targets
         run: |
           rustup update stable && rustup default stable
-          rustup target add aarch64-linux-android
-          rustup target add armv7-linux-androideabi
+          rustup target add aarch64-linux-android armv7-linux-androideabi # Added both targets here
 
       # Install cargo-apk
       - name: Install cargo-apk
@@ -184,30 +211,26 @@ jobs:
         run: |
           cd crates/desktop
           cargo apk build --release --target aarch64-linux-android
-        env:
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
-          ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_ROOT }}
+        # Removed 'env:' section as variables are now in GITHUB_ENV
 
       # Build APK for armv7 (ARM32)
       - name: Build APK for armv7
         run: |
           cd crates/desktop
           cargo apk build --release --target armv7-linux-androideabi
-        env:
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
-          ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_ROOT }}
+        # Removed 'env:' section as variables are now in GITHUB_ENV
 
       # Find and rename APKs with version
       - name: Find and rename APKs
         run: |
           mkdir -p release
-          
+
           echo "🔍 Searching for APK files..."
           find . -name "*.apk" -type f | while read apk; do
             echo "Found APK: $apk"
             echo "Size: $(du -h "$apk" | cut -f1)"
           done
-          
+
           # Find ARM64 APK
           ARM64_APK=$(find crates/desktop/target/aarch64-linux-android -name "*.apk" -type f | head -1)
           if [ -n "$ARM64_APK" ]; then
@@ -216,7 +239,7 @@ jobs:
           else
             echo "❌ ARM64 APK not found"
           fi
-          
+
           # Find ARM32 APK
           ARM32_APK=$(find crates/desktop/target/armv7-linux-androideabi -name "*.apk" -type f | head -1)
           if [ -n "$ARM32_APK" ]; then
@@ -225,7 +248,7 @@ jobs:
           else
             echo "❌ ARM32 APK not found"
           fi
-          
+
           # List generated files for debugging
           echo "📦 Generated APK files:"
           ls -la release/ || echo "No files in release directory"
