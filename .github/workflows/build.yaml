@@ -1,4 +1,3 @@
----
 #-------------------------------------------------------------------------------
 # Workflow configuration
 #-------------------------------------------------------------------------------
@@ -27,67 +26,83 @@ env:
 #-------------------------------------------------------------------------------
 
 jobs:
-  build-linux:
-    name: "Build on Linux"
+  build-android:
+    name: "Build for Android (aarch64)"
     runs-on: ubuntu-22.04
     steps:
-      # Checkout repository (and submodules)
-      - name: Checkout repository (and submodules)
+      # 1. Checkout 代码（含子模块）
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
-      # Get current git tag version
+
+      # 2. 获取 Git 版本号
       - name: Get git version
         id: git_tag_version
         run: |
-          export BUILD_VERSION=$(git describe --tags --abbrev=0)
-          echo "Build at version $BUILD_VERSION"
+          # 如果是 tag 直接使用，否则用 latest
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            BUILD_VERSION=$(echo $GITHUB_REF | sed 's|refs/tags/||')
+          else
+            BUILD_VERSION="latest"
+          fi
+          echo "Build version: $BUILD_VERSION"
           echo "BUILD_VERSION=$BUILD_VERSION" >> $GITHUB_OUTPUT
-      # Install dependencies (from package manager)
-      # - name: Install cross bin
-      #   run: |
-      #     wget https://99z.top/https://musl.cc/aarch64-linux-musl-cross.tgz
-      #     sudo tar -xvf aarch64-linux-musl-cross.tgz  -C /opt/
-      #     echo 'PATH=/opt/aarch64-linux-musl-cross/bin/:$PATH' >> ~/.bashrc
-      #     source ~/.bashrc
-      #     echo "
-      #     [target.aarch64-unknown-linux-musl]
-      #     linker = \"aarch64-linux-musl-ld\"" >> ~/.cargo/config
-      - name: Install dependencies (from package manager)
-        run: |
-          sudo apt-get install libgl1-mesa-dev libxcb1-dev libxkbcommon-x11-dev libx11-xcb-dev libxcb-cursor0 libzstd-dev fuse libfuse-dev libwayland-dev -y;
-          sudo apt-get install cmake ninja-build pkgconf libtool fish -y;
-          sudo apt-get install musl-tools musl-dev -y;
-          sudo apt-get install appstream -y;
 
-      - name: Build cli for ARM linux
+      # 3. 安装系统依赖
+      - name: Install dependencies
         run: |
-          rustup target install aarch64-unknown-linux-musl
-          cargo install cross
-          cross build --release -p wsrx --target aarch64-linux-android;
-      
-      # # Deploy ARM
-      # - name: Compress musl Binaries
-      #   run: tar --transform='s!.*/!!' -czvf wsrx-cli-linux-musl-aarch64.tar.gz target/aarch64-unknown-linux-musl/release/wsrx
-        
-      # # Move files
-      # - name: move files
-      #   run: |
-      #     mv wsrx-cli-linux-musl-aarch64.tar.gz wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-musl-aarch64.tar.gz
-      
-      # Upload ARM
-      - name: Upload ARM cli package
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config
+
+      # 4. 下载并安装 Android NDK
+      - name: Download and setup Android NDK
+        run: |
+          echo "Downloading Android NDK..."
+          wget -q https://dl.google.com/android/repository/android-ndk-r26b-linux.zip -O ndk.zip
+          unzip -q ndk.zip
+          mv android-ndk-r26b /opt/android-ndk
+          echo "NDK installed to /opt/android-ndk"
+
+          # 将 NDK 添加到 PATH
+          echo "/opt/android-ndk" >> $GITHUB_PATH
+          echo "/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
+
+      # 5. 安装 Rust 目标和 cargo-ndk
+      - name: Install Rust target and cargo-ndk
+        run: |
+          rustup target install aarch64-linux-android
+          cargo install cargo-ndk
+
+      # 6. 使用 cargo-ndk 构建 Android 二进制
+      - name: Build for Android (arm64-v8a)
+        run: |
+          cargo ndk -t arm64-v8a build --release -p wsrx
+
+      # 7. 打包二进制文件
+      - name: Package binary
+        run: |
+          mkdir -p release
+          cp target/aarch64-linux-android/release/wsrx release/wsrx-android-aarch64
+          tar -czf wsrx-cli-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-aarch64.tar.gz -C release .
+          echo "Package created: wsrx-cli-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-aarch64.tar.gz"
+
+      # 8. 上传为 Artifact（每次构建都保留）
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wsrx-cli-android-aarch64.tar.gz
-          path: target/aarch64-unknown-linux-musl/release/wsrx
+          name: wsrx-cli-android-aarch64-${{ steps.git_tag_version.outputs.BUILD_VERSION }}
+          path: wsrx-cli-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-aarch64.tar.gz
 
-      # Upload to github release
-      - name: Release
+      # 9. 发布到 GitHub Release（仅在 tag 时触发）
+      - name: Release to GitHub
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            wsrx-cli-${{steps.git_tag_version.outputs.BUILD_VERSION}}-linux-musl-aarch64.tar.gz
-   
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body: "Automated release of `wsrx` CLI for Android (aarch64)."
+          files: wsrx-cli-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-aarch64.tar.gz
+          draft: false
+          prerelease: false
