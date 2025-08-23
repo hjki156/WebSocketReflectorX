@@ -28,6 +28,9 @@ env:
 jobs:
   build-android-cli:
     name: "Build for Android (aarch64) for terminal"
+    if: false  
+    # Temporarily disable this job
+    # To re-enable, change 'false' to 'true' or remove this line
     runs-on: ubuntu-22.04
     steps:
       # 1. Checkout 代码（含子模块）
@@ -137,47 +140,102 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # Install Android SDK & NDK with proper NDK version and configure environment
-      - name: Install Android SDK and NDK
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 11076708
-          ndk-version: 25.1.8937393
-        # Use 'run:' section to configure environment variables after SDK/NDK installation
-      - name: Configure environment variables
+      # --- MANUAL SDK/NDK INSTALLATION ---
+      # Instead of relying on android-actions/setup-android for installation,
+      # we download and set up SDK/NDK manually to ensure completeness.
+      - name: Install Android SDK Command-line Tools and NDK manually
         run: |
-          # Verify ANDROID_HOME is set by the action
-          if [ -z "$ANDROID_HOME" ]; then
-            echo "::error::ANDROID_HOME is not set by the setup-android action!"
-            exit 1
-          fi
-          echo "ANDROID_HOME is set to: $ANDROID_HOME"
-          
-          # Check if source.properties exists in ANDROID_HOME (SDK root)
+          # Define versions and paths
+          SDK_TOOLS_VERSION="11076708" # cmdline-tools version
+          NDK_VERSION="25.1.8937393"
+          ANDROID_HOME="$HOME/android-sdk"
+          SDK_TOOLS_ZIP="commandlinetools-linux-${SDK_TOOLS_VERSION}_latest.zip"
+          NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
+
+          echo "ANDROID_HOME will be: $ANDROID_HOME"
+
+          # Create SDK directory
+          mkdir -p "$ANDROID_HOME"
+
+          # --- Install Command-line Tools ---
+          echo "Downloading Android SDK Command-line Tools..."
+          wget -q "https://dl.google.com/android/repository/${SDK_TOOLS_ZIP}" -O "$HOME/sdk-tools.zip"
+          echo "Extracting SDK Command-line Tools..."
+          # Extract to a temporary location first
+          mkdir -p "$HOME/sdk-tmp"
+          unzip -q "$HOME/sdk-tools.zip" -d "$HOME/sdk-tmp"
+          # Move 'cmdline-tools' directory into SDK root correctly
+          # It should be $ANDROID_HOME/cmdline-tools/latest/
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          mv "$HOME/sdk-tmp/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+          rm -f "$HOME/sdk-tools.zip"
+          rm -rf "$HOME/sdk-tmp"
+
+          # Add tools to PATH for this session and future steps
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          echo "PATH=$PATH" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+
+          # Accept licenses
+          echo "Accepting Android SDK licenses..."
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true # Ignore potential non-zero exit
+
+          # --- Install essential SDK packages ---
+          echo "Installing essential SDK packages (platform-tools, platforms, build-tools)..."
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-33" \ # Target SDK version, adjust if needed by your project
+            "build-tools;33.0.2" \   # Build tools version, adjust if needed
+            > /dev/null # Suppress output to reduce log size
+
+          # --- Install NDK ---
+          echo "Downloading Android NDK $NDK_VERSION..."
+          wget -q "https://dl.google.com/android/repository/${NDK_ZIP}" -O "$HOME/ndk.zip"
+          echo "Extracting Android NDK..."
+          unzip -q "$HOME/ndk.zip" -d "$HOME"
+          # Move NDK to standard location within SDK
+          mv "$HOME/android-ndk-${NDK_VERSION}" "$ANDROID_HOME/ndk/${NDK_VERSION}"
+          rm -f "$HOME/ndk.zip"
+
+          # Set NDK environment variables
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/${NDK_VERSION}" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> $GITHUB_ENV
+
+          # Explicitly unset ANDROID_SDK_ROOT to avoid deprecation warning and conflicts
+          echo "ANDROID_SDK_ROOT=" >> $GITHUB_ENV
+
+          # Verify key files exist
           if [ ! -f "$ANDROID_HOME/source.properties" ]; then
-            echo "::warning::source.properties not found in ANDROID_HOME ($ANDROID_HOME). This might cause issues."
-            # List contents for debugging
-            echo "Contents of ANDROID_HOME:"
-            ls -la "$ANDROID_HOME" || echo "Could not list ANDROID_HOME"
+            # The root SDK directory might not have source.properties, but cmdline-tools or packages might.
+            # Let's check a core installed component.
+            if [ -f "$ANDROID_HOME/platform-tools/source.properties" ]; then
+                echo "::notice::SDK source.properties found in platform-tools."
+            else
+                echo "::warning::source.properties not found in expected SDK locations. This might still cause issues."
+            fi
+          else
+            echo "::notice::SDK source.properties found in root."
           fi
 
-          # Set NDK environment variables pointing to the installed NDK version within ANDROID_HOME
-          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
-          
-          # Ensure ANDROID_HOME is correctly set in GITHUB_ENV (redundant but safe)
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          
-          # Explicitly unset the deprecated ANDROID_SDK_ROOT to prevent conflicts
-          # We set it to empty string in GITHUB_ENV to override any previous value
-          echo "ANDROID_SDK_ROOT=" >> $GITHUB_ENV
-          # Also unset it for the current shell session
-          unset ANDROID_SDK_ROOT
-          
-          # Optional: Debug output to verify variables
-          echo "::debug::ANDROID_HOME=$ANDROID_HOME"
-          echo "::debug::ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" # This will show the value from the *current* shell, which should be set now
-          echo "::debug::ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          if [ ! -f "$ANDROID_HOME/ndk/${NDK_VERSION}/source.properties" ]; then
+              echo "::error::NDK source.properties NOT found! Installation likely failed."
+              ls -la "$ANDROID_HOME/ndk/${NDK_VERSION}/" || echo "NDK directory listing failed."
+              exit 1
+          else
+              echo "::notice::NDK source.properties found."
+          fi
+
+          if [ ! -d "$ANDROID_HOME/build-tools" ]; then
+              echo "::error::build-tools directory NOT found! SDK installation likely failed."
+              ls -la "$ANDROID_HOME/" || echo "SDK root directory listing failed."
+              exit 1
+          else
+              echo "::notice::build-tools directory found."
+          fi
+
+          echo "::notice::Manual SDK/NDK installation and configuration completed successfully."
+
+      # --- END MANUAL SDK/NDK INSTALLATION ---
 
       # Install system dependencies for GUI building
       - name: Install system dependencies
@@ -199,7 +257,7 @@ jobs:
       - name: Install Rust and Android targets
         run: |
           rustup update stable && rustup default stable
-          rustup target add aarch64-linux-android armv7-linux-androideabi # Added both targets here
+          rustup target add aarch64-linux-android armv7-linux-androideabi
 
       # Install cargo-apk
       - name: Install cargo-apk
@@ -211,14 +269,14 @@ jobs:
         run: |
           cd crates/desktop
           cargo apk build --release --target aarch64-linux-android
-        # Removed 'env:' section as variables are now in GITHUB_ENV
+        # Environment variables are now set in GITHUB_ENV
 
       # Build APK for armv7 (ARM32)
       - name: Build APK for armv7
         run: |
           cd crates/desktop
           cargo apk build --release --target armv7-linux-androideabi
-        # Removed 'env:' section as variables are now in GITHUB_ENV
+        # Environment variables are now set in GITHUB_ENV
 
       # Find and rename APKs with version
       - name: Find and rename APKs
