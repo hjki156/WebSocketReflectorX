@@ -62,6 +62,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 slint = { version = "1.12", default-features = false, features = [
   "accessibility",
   "backend-winit",
+  "backend-android-activity-06",
   "compat-1-2",
   "gettext",
   "renderer-skia",

@@ -15,7 +15,7 @@ version.workspace      = true
 wsrx = { path = "../wsrx" }
 
 i-slint-backend-winit = { workspace = true }
-slint                 = { workspace = true, features = ["android"] }
+slint                 = { workspace = true, features = ["backend-android-activity-06"] }
 winit                 = { workspace = true }
 
 directories      = { workspace = true }
