@@ -184,9 +184,10 @@ jobs:
           echo "Installing essential SDK packages (platform-tools, platforms, build-tools)..."
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platform-tools" \
-            "platforms;android-33" \ # Target SDK version, adjust if needed by your project
-            "build-tools;33.0.2" \   # Build tools version, adjust if needed
-            > /dev/null # Suppress output to reduce log size
+            "platforms;android-33" \
+            "build-tools;33.0.2" \
+            > /dev/null
+          # Suppress output to reduce log size
 
           # --- Install NDK ---
           echo "Downloading Android NDK $NDK_VERSION..."
