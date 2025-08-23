@@ -111,262 +111,41 @@ jobs:
           prerelease: false
 
   build-android-gui:
-    name: "Build Android GUI App"
-    runs-on: ubuntu-22.04
+    name: Build Android GUI
+    runs-on: ubuntu-latest
+
     steps:
-      # Checkout repository (and submodules)
-      - name: Checkout repository (and submodules)
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
         with:
-          fetch-depth: 0
-          submodules: recursive
+          toolchain: stable
+          target: aarch64-linux-android
+          override: true
 
-      # Get current git tag version
-      - name: Get git version
-        id: git_tag_version
-        run: |
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            BUILD_VERSION=$(echo $GITHUB_REF | sed 's|refs/tags/||')
-          else
-            BUILD_VERSION="latest"
-          fi
-          echo "Build at version $BUILD_VERSION"
-          echo "BUILD_VERSION=$BUILD_VERSION" >> $GITHUB_OUTPUT
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      # Setup Java 17 (required for recent Android SDK tools)
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          ndk-version: r25b
 
-      # --- USE PRE-INSTALLED ANDROID SDK/NDK ---
-      # Leverage the pre-installed Android SDK on the GitHub Actions runner
-      # and install/update necessary components using sdkmanager.
-      - name: Setup Pre-installed Android SDK and Install Components
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Build Rust libraries
         run: |
-          # --- 1. Identify and Set ANDROID_HOME ---
-          # GitHub Actions runners often have ANDROID_HOME pre-set.
-          # Let's check common locations if it's not already set or incorrect.
-          if [ -z "$ANDROID_HOME" ] || [ ! -d "$ANDROID_HOME" ]; then
-            # Common default location on GitHub Actions Ubuntu runners
-            if [ -d "/usr/local/lib/android/sdk" ]; then
-              export ANDROID_HOME="/usr/local/lib/android/sdk"
-              echo "ANDROID_HOME was not set or invalid. Setting to default: $ANDROID_HOME"
-            else
-              echo "::error::ANDROID_HOME is not set and default location '/usr/local/lib/android/sdk' does not exist."
-              exit 1
-            fi
-          else
-            echo "ANDROID_HOME is already set to: $ANDROID_HOME"
-          fi
+          cargo ndk -t arm64-v8a -o ./android/app/src/main/jniLibs build --release
 
-          # Export ANDROID_HOME for subsequent steps
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+      - name: Build Android APK
+        working-directory: ./android
+        run: ./gradlew assembleRelease
 
-          # --- 2. Update PATH ---
-          # Add essential tools to PATH
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/cmdline-tools/tools/bin:$ANDROID_HOME/platform-tools:$PATH"
-          echo "PATH=$PATH" >> $GITHUB_ENV
-
-          # --- 3. Accept Licenses ---
-          echo "Accepting Android SDK licenses..."
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-
-          # --- 4. List currently installed packages (for debugging) ---
-          echo "Listing currently installed SDK packages..."
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list_installed
-
-          # --- 5. Install/Update essential SDK packages ---
-          echo "Installing/updating essential SDK packages..."
-          # Ensure cmdline-tools are updated first
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "cmdline-tools;latest" > /dev/null
-
-          # Install core components
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platform-tools" \
-            "platforms;android-33" \
-            "build-tools;33.0.2" \
-            "ndk;25.1.8937393" \
-            > /dev/null # Suppress output
-
-          # --- 6. Set NDK Environment Variables ---
-          # Find the installed NDK version directory
-          if [ -d "$ANDROID_HOME/ndk" ]; then
-            # Get the first (and hopefully only needed) directory listed
-            NDK_VERSION_DIR=$(ls "$ANDROID_HOME/ndk" | head -n 1)
-            if [ -n "$NDK_VERSION_DIR" ]; then
-              export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION_DIR"
-              export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION_DIR"
-              echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" >> $GITHUB_ENV
-              echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-              echo "NDK installed and variables set to: $ANDROID_NDK_HOME"
-            else
-              echo "::error::NDK directory '$ANDROID_HOME/ndk' exists but is empty."
-              exit 1
-            fi
-          else
-            echo "::error::NDK directory '$ANDROID_HOME/ndk' was not created after installation."
-            exit 1
-          fi
-
-          # --- 7. Explicitly Unset ANDROID_SDK_ROOT ---
-          echo "ANDROID_SDK_ROOT=" >> $GITHUB_ENV
-          unset ANDROID_SDK_ROOT # Unset for current shell
-
-          # --- 8. Final Verification ---
-          echo "Verifying installation paths..."
-          if [ ! -d "$ANDROID_HOME/build-tools" ]; then
-            echo "::error::build-tools directory still does not exist at '$ANDROID_HOME/build-tools'!"
-            echo "Contents of ANDROID_HOME:"
-            ls -la "$ANDROID_HOME" || echo "Failed to list ANDROID_HOME"
-            exit 1
-          else
-            echo "::notice::build-tools directory found."
-          fi
-
-          if [ ! -f "$ANDROID_NDK_HOME/source.properties" ]; then
-            echo "::error::NDK source.properties not found at '$ANDROID_NDK_HOME/source.properties'!"
-            echo "Contents of NDK directory:"
-            ls -la "$ANDROID_NDK_HOME" || echo "Failed to list NDK directory"
-            exit 1
-          else
-          echo "::notice::NDK source.properties found."
-          fi
-
-          echo "::notice::Android SDK and NDK setup using pre-installed tools completed successfully."
-
-      # --- END PRE-INSTALLED SDK/NDK SETUP ---
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake \
-            ninja-build \
-            pkg-config \
-            imagemagick \
-            libfontconfig1-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            libxrandr-dev \
-            libxcursor-dev \
-            libxi-dev
-
-      # Install Rust and Android targets
-      - name: Install Rust and Android targets
-        run: |
-          rustup update stable && rustup default stable
-          rustup target add aarch64-linux-android armv7-linux-androideabi
-
-      # Install cargo-apk
-      - name: Install cargo-apk
-        run: |
-          cargo install cargo-apk
-
-          # Build APK for aarch64 (ARM64)
-      - name: Build APK for aarch64
-        run: |
-          # Explicitly export environment variables for this step's shell
-          # This ensures they are available to cargo-apk and any subprocesses it spawns.
-          export ANDROID_HOME="/usr/local/lib/android/sdk"
-          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/25.1.8937393"
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/25.1.8937393"
-          # Explicitly unset ANDROID_SDK_ROOT for this shell session
-          unset ANDROID_SDK_ROOT
-
-          # Debug: Print the variables to confirm
-          echo "Debug - ANDROID_HOME: $ANDROID_HOME"
-          echo "Debug - ANDROID_NDK_ROOT: $ANDROID_NDK_ROOT"
-          echo "Debug - ANDROID_SDK_ROOT (should be empty): '$ANDROID_SDK_ROOT'"
-
-          # Verify build-tools path exists in this shell context
-          if [ ! -d "$ANDROID_HOME/build-tools" ]; then
-            echo "::error::build-tools directory NOT found at '$ANDROID_HOME/build-tools' in this build step!"
-            echo "Contents of ANDROID_HOME:"
-            ls -la "$ANDROID_HOME"
-            exit 1
-          else
-            echo "::notice::build-tools directory confirmed present for build step."
-          fi
-
-          cd crates/desktop
-          cargo apk build --release --target aarch64-linux-android
-        # Do NOT use the 'env:' section here as we are setting variables explicitly in the run script
-
-      # Build APK for armv7 (ARM32)
-      - name: Build APK for armv7
-        run: |
-          # Explicitly export environment variables for this step's shell
-          export ANDROID_HOME="/usr/local/lib/android/sdk"
-          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/25.1.8937393"
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/25.1.8937393"
-          # Explicitly unset ANDROID_SDK_ROOT for this shell session
-          unset ANDROID_SDK_ROOT
-
-          # Debug: Print the variables to confirm
-          echo "Debug - ANDROID_HOME: $ANDROID_HOME"
-          echo "Debug - ANDROID_NDK_ROOT: $ANDROID_NDK_ROOT"
-          echo "Debug - ANDROID_SDK_ROOT (should be empty): '$ANDROID_SDK_ROOT'"
-
-          # Verify build-tools path exists in this shell context
-          if [ ! -d "$ANDROID_HOME/build-tools" ]; then
-            echo "::error::build-tools directory NOT found at '$ANDROID_HOME/build-tools' in this build step!"
-            echo "Contents of ANDROID_HOME:"
-            ls -la "$ANDROID_HOME"
-            exit 1
-          else
-            echo "::notice::build-tools directory confirmed present for build step."
-          fi
-
-          cd crates/desktop
-          cargo apk build --release --target armv7-linux-androideabi
-        # Do NOT use the 'env:' section here as we are setting variables explicitly in the run script
-
-      # Find and rename APKs with version
-      - name: Find and rename APKs
-        run: |
-          mkdir -p release
-
-          echo "🔍 Searching for APK files..."
-          find . -name "*.apk" -type f | while read apk; do
-            echo "Found APK: $apk"
-            echo "Size: $(du -h "$apk" | cut -f1)"
-          done
-
-          # Find ARM64 APK
-          ARM64_APK=$(find crates/desktop/target/aarch64-linux-android -name "*.apk" -type f | head -1)
-          if [ -n "$ARM64_APK" ]; then
-            cp "$ARM64_APK" "release/WebSocketReflectorX-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-arm64-v8a.apk"
-            echo "✅ ARM64 APK: $ARM64_APK"
-          else
-            echo "❌ ARM64 APK not found"
-          fi
-
-          # Find ARM32 APK
-          ARM32_APK=$(find crates/desktop/target/armv7-linux-androideabi -name "*.apk" -type f | head -1)
-          if [ -n "$ARM32_APK" ]; then
-            cp "$ARM32_APK" "release/WebSocketReflectorX-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-armeabi-v7a.apk"
-            echo "✅ ARM32 APK: $ARM32_APK"
-          else
-            echo "❌ ARM32 APK not found"
-          fi
-
-          # List generated files for debugging
-          echo "📦 Generated APK files:"
-          ls -la release/ || echo "No files in release directory"
-
-      # Upload APKs as artifacts
-      - name: Upload APKs (Artifacts)
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: android-gui-apks-${{ steps.git_tag_version.outputs.BUILD_VERSION }}
-          path: release/*.apk
-
-      # Upload to GitHub Release
-      - name: Release to GitHub
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            release/WebSocketReflectorX-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-arm64-v8a.apk
-            release/WebSocketReflectorX-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-armeabi-v7a.apk
+          name: android-apk
+          path: android/app/build/outputs/apk/release/*.apk
