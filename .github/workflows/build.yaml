@@ -118,23 +118,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: aarch64-linux-android
-          override: true
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Download and setup Android NDK
+        run: |
+          echo "Downloading Android NDK..."
+          wget -q https://dl.google.com/android/repository/android-ndk-r26b-linux.zip -O ndk.zip
+          unzip -q ndk.zip
+          mv android-ndk-r26b /opt/android-ndk
+          echo "NDK installed to /opt/android-ndk"
 
-      - name: Set up Android NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r25b
+          # 将 NDK 添加到 PATH
+          echo "/opt/android-ndk" >> $GITHUB_PATH
+          echo "/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
 
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk
+      - name: Install Rust target and cargo-ndk
+        run: |
+          rustup target install aarch64-linux-android
+          cargo install cargo-ndk
 
       - name: Build Rust libraries
         run: |
