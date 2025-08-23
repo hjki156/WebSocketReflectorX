@@ -1,0 +1,48 @@
+import { Styles } from "widgets/styles.slint";
+import { SideBar } from "blocks/side-bar.slint";
+import { WindowControlBridge, Log, SystemInfoBridge, Instance, Scope, InstanceBridge, ScopeBridge, SettingsBridge } from "blocks/bridges.slint";
+import { Stack } from "blocks/stack.slint";
+import { UiState } from "blocks/globals.slint";
+import { Button } from "std-widgets.slint";
+export { WindowControlBridge, Log, Instance, Scope, InstanceBridge, ScopeBridge, SettingsBridge, UiState }
+
+export component MainWindow {
+    width: 600px;
+    height: 1080px;
+    HorizontalLayout {
+        spacing: 0;
+        padding: 0;
+
+        side-bar := SideBar {
+            width: UiState.show-sidebar ? 256px : 0px;
+        }
+
+        VerticalLayout {
+            spacing: 0;
+            padding: 0;
+            // 在 VerticalLayout 中，Stack 之前添加：
+            HorizontalLayout {
+                height: 48px;
+                padding: 8px;
+
+                Button {
+                    text: "☰";
+                    width: 48px;
+                    clicked => {
+                        UiState.show-sidebar = !UiState.show-sidebar;
+                    }
+                }
+
+                Text {
+                    text: "WebSocket Reflector X";
+                    font-size: 18px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+            }
+            Stack {
+                vertical-stretch: 1;
+            }
+        }
+    }
+}

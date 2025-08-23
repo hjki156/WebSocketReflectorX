@@ -15,7 +15,7 @@ version.workspace      = true
 wsrx = { path = "../wsrx" }
 
 i-slint-backend-winit = { workspace = true }
-slint                 = { workspace = true }
+slint                 = { workspace = true, features = ["android"] }
 winit                 = { workspace = true }
 
 directories      = { workspace = true }
@@ -70,3 +70,27 @@ icon = [
   "macos/WebSocketReflectorX.icns",
   "windows/WebSocketReflectorX.ico",
 ]
+
+[lib]
+name = "wsrx_desktop"
+crate-type = ["cdylib", "rlib"]  # 必须有 cdylib 以生成 Android .so
+path = "src/lib.rs"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.13"
+log = "0.4"
+
+[package.metadata.android]
+# Android SDK 版本
+target_sdk_version = 34
+min_sdk_version = 21
+
+# 应用图标
+icon = "arts/logo.png"
+
+# 资源文件夹
+assets = ["assets", "fonts", "arts"]
+
+# Android Manifest 配置
+[[package.metadata.android.application.activity]]
+name = "MainActivity"

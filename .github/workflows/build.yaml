@@ -26,8 +26,8 @@ env:
 #-------------------------------------------------------------------------------
 
 jobs:
-  build-android:
-    name: "Build for Android (aarch64)"
+  build-android-cli:
+    name: "Build for Android (aarch64) for terminal"
     runs-on: ubuntu-22.04
     steps:
       # 1. Checkout 代码（含子模块）
@@ -106,3 +106,86 @@ jobs:
           files: wsrx-cli-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-aarch64.tar.gz
           draft: false
           prerelease: false
+
+  build-android:
+    name: "Build on Android"
+    runs-on: ubuntu-22.04
+    steps:
+      # Checkout repository (and submodules)
+      - name: Checkout repository (and submodules)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      # Get current git tag version
+      - name: Get git version
+        id: git_tag_version
+        run: |
+          export BUILD_VERSION=$(git describe --tags --abbrev=0)
+          echo "Build at version $BUILD_VERSION"
+          echo "BUILD_VERSION=$BUILD_VERSION" >> $GITHUB_OUTPUT
+
+      # Install Android SDK & NDK
+      - name: Install Android SDK and NDK
+        uses: android-actions/setup-android@v3
+
+      # Set NDK version (required for slint-build-apk)
+      - name: Set NDK version
+        run: |
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
+
+      # Install Rust and Android targets
+      - name: Install Rust and Android targets
+        run: |
+          rustup update stable && rustup default stable
+          rustup target add aarch64-linux-android
+          rustup target add armv7-linux-androideabi
+
+      # Install slint-build-apk
+      - name: Install slint-build-apk
+        run: |
+          cargo install slint-build-apk
+
+      # Build APK for aarch64 (ARM64)
+      - name: Build APK for aarch64
+        run: |
+          slint-build-apk --release --target aarch64-linux-android
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_ROOT }}
+
+      # Build APK for armv7 (ARM32)
+      - name: Build APK for armv7
+        run: |
+          slint-build-apk --release --target armv7-linux-androideabi
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_ROOT }}
+
+      # Rename APKs with version
+      - name: Rename APKs
+        run: |
+          mkdir -p release
+          mv target/aarch64-linux-android/release/android-build/app/build/outputs/apk/release/app-release.apk \
+              release/WebSocketReflectorX-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-arm64-v8a.apk
+          mv target/armv7-linux-androideabi/release/android-build/app/build/outputs/apk/release/app-release.apk \
+              release/WebSocketReflectorX-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-armeabi-v7a.apk
+
+      # Upload APKs as artifacts
+      - name: Upload APKs (Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          path: release/*.apk
+
+      # Upload to GitHub Release
+      - name: Release to GitHub
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            release/WebSocketReflectorX-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-arm64-v8a.apk
+            release/WebSocketReflectorX-${{ steps.git_tag_version.outputs.BUILD_VERSION }}-android-armeabi-v7a.apk
+
+    
