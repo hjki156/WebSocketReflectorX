@@ -140,100 +140,103 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # --- MANUAL SDK/NDK INSTALLATION ---
-      # Instead of relying on android-actions/setup-android for installation,
-      # we download and set up SDK/NDK manually to ensure completeness.
-      - name: Install Android SDK Command-line Tools and NDK manually
+      # --- USE PRE-INSTALLED ANDROID SDK/NDK ---
+      # Leverage the pre-installed Android SDK on the GitHub Actions runner
+      # and install/update necessary components using sdkmanager.
+      - name: Setup Pre-installed Android SDK and Install Components
         run: |
-          # Define versions and paths
-          SDK_TOOLS_VERSION="11076708" # cmdline-tools version
-          # NDK_VERSION="25.1.8937393" # We will let sdkmanager handle this
-          ANDROID_HOME="$HOME/android-sdk"
-          SDK_TOOLS_ZIP="commandlinetools-linux-${SDK_TOOLS_VERSION}_latest.zip"
-          # NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip" # Remove this
+          # --- 1. Identify and Set ANDROID_HOME ---
+          # GitHub Actions runners often have ANDROID_HOME pre-set.
+          # Let's check common locations if it's not already set or incorrect.
+          if [ -z "$ANDROID_HOME" ] || [ ! -d "$ANDROID_HOME" ]; then
+            # Common default location on GitHub Actions Ubuntu runners
+            if [ -d "/usr/local/lib/android/sdk" ]; then
+              export ANDROID_HOME="/usr/local/lib/android/sdk"
+              echo "ANDROID_HOME was not set or invalid. Setting to default: $ANDROID_HOME"
+            else
+              echo "::error::ANDROID_HOME is not set and default location '/usr/local/lib/android/sdk' does not exist."
+              exit 1
+            fi
+          else
+            echo "ANDROID_HOME is already set to: $ANDROID_HOME"
+          fi
 
-          echo "ANDROID_HOME will be: $ANDROID_HOME"
-
-          # Create SDK directory
-          mkdir -p "$ANDROID_HOME"
-
-          # --- Install Command-line Tools ---
-          echo "Downloading Android SDK Command-line Tools..."
-          wget -q "https://dl.google.com/android/repository/${SDK_TOOLS_ZIP}" -O "$HOME/sdk-tools.zip"
-          echo "Extracting SDK Command-line Tools..."
-          mkdir -p "$HOME/sdk-tmp"
-          unzip -q "$HOME/sdk-tools.zip" -d "$HOME/sdk-tmp"
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
-          mv "$HOME/sdk-tmp/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
-          rm -f "$HOME/sdk-tools.zip"
-          rm -rf "$HOME/sdk-tmp"
-
-          # Add tools to PATH for this session and future steps
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
-          echo "PATH=$PATH" >> $GITHUB_ENV
+          # Export ANDROID_HOME for subsequent steps
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
 
-          # Accept licenses
-          echo "Accepting Android SDK licenses..."
-          # Improved license acceptance to avoid "Broken pipe" warning
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          # --- 2. Update PATH ---
+          # Add essential tools to PATH
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/cmdline-tools/tools/bin:$ANDROID_HOME/platform-tools:$PATH"
+          echo "PATH=$PATH" >> $GITHUB_ENV
 
-          # --- Install essential SDK packages INCLUDING NDK ---
-          # Add the NDK package to the list for sdkmanager to install
-          echo "Installing essential SDK packages (platform-tools, platforms, build-tools, NDK)..."
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+          # --- 3. Accept Licenses ---
+          echo "Accepting Android SDK licenses..."
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+
+          # --- 4. List currently installed packages (for debugging) ---
+          echo "Listing currently installed SDK packages..."
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list_installed
+
+          # --- 5. Install/Update essential SDK packages ---
+          echo "Installing/updating essential SDK packages..."
+          # Ensure cmdline-tools are updated first
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "cmdline-tools;latest" > /dev/null
+
+          # Install core components
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393" \
-            > /dev/null # Suppress output to reduce log size
+            > /dev/null # Suppress output
 
-          # --- Set NDK environment variables ---
-          # After installation, determine the exact NDK path
-          # sdkmanager usually installs it under $ANDROID_HOME/ndk/
-          # List the contents to find the installed version directory
+          # --- 6. Set NDK Environment Variables ---
+          # Find the installed NDK version directory
           if [ -d "$ANDROID_HOME/ndk" ]; then
-            INSTALLED_NDK_DIR=$(ls -1 "$ANDROID_HOME/ndk" | head -n 1)
-            if [ -n "$INSTALLED_NDK_DIR" ]; then
-              echo "Found installed NDK directory: $INSTALLED_NDK_DIR"
-              echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$INSTALLED_NDK_DIR" >> $GITHUB_ENV
-              echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$INSTALLED_NDK_DIR" >> $GITHUB_ENV
+            # Get the first (and hopefully only needed) directory listed
+            NDK_VERSION_DIR=$(ls "$ANDROID_HOME/ndk" | head -n 1)
+            if [ -n "$NDK_VERSION_DIR" ]; then
+              export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION_DIR"
+              export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION_DIR"
+              echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" >> $GITHUB_ENV
+              echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+              echo "NDK installed and variables set to: $ANDROID_NDK_HOME"
             else
-              echo "::error::NDK directory is empty after installation!"
-              ls -la "$ANDROID_HOME/ndk/" || echo "Could not list NDK directory"
+              echo "::error::NDK directory '$ANDROID_HOME/ndk' exists but is empty."
               exit 1
             fi
           else
-            echo "::error::NDK directory was not created by sdkmanager!"
-            ls -la "$ANDROID_HOME/" || echo "Could not list SDK root directory"
+            echo "::error::NDK directory '$ANDROID_HOME/ndk' was not created after installation."
             exit 1
           fi
 
-          # Explicitly unset ANDROID_SDK_ROOT to avoid deprecation warning and conflicts
+          # --- 7. Explicitly Unset ANDROID_SDK_ROOT ---
           echo "ANDROID_SDK_ROOT=" >> $GITHUB_ENV
+          unset ANDROID_SDK_ROOT # Unset for current shell
 
-          # --- Verification ---
+          # --- 8. Final Verification ---
+          echo "Verifying installation paths..."
           if [ ! -d "$ANDROID_HOME/build-tools" ]; then
-              echo "::error::build-tools directory NOT found!"
-              ls -la "$ANDROID_HOME/" || echo "SDK root directory listing failed."
-              exit 1
+            echo "::error::build-tools directory still does not exist at '$ANDROID_HOME/build-tools'!"
+            echo "Contents of ANDROID_HOME:"
+            ls -la "$ANDROID_HOME" || echo "Failed to list ANDROID_HOME"
+            exit 1
           else
-              echo "::notice::build-tools directory found."
+            echo "::notice::build-tools directory found."
           fi
 
-          NDK_SOURCE_PROPERTIES="$ANDROID_NDK_HOME/source.properties"
-          if [ ! -f "$NDK_SOURCE_PROPERTIES" ]; then
-              echo "::error::NDK source.properties NOT found at $NDK_SOURCE_PROPERTIES!"
-              ls -la "$ANDROID_NDK_HOME/" || echo "NDK directory listing failed."
-              exit 1
+          if [ ! -f "$ANDROID_NDK_HOME/source.properties" ]; then
+            echo "::error::NDK source.properties not found at '$ANDROID_NDK_HOME/source.properties'!"
+            echo "Contents of NDK directory:"
+            ls -la "$ANDROID_NDK_HOME" || echo "Failed to list NDK directory"
+            exit 1
           else
-              echo "::notice::NDK source.properties found."
+          echo "::notice::NDK source.properties found."
           fi
 
-          echo "::notice::Manual SDK/NDK installation and configuration completed successfully."
-            # --- END MANUAL SDK/NDK INSTALLATION ---
+          echo "::notice::Android SDK and NDK setup using pre-installed tools completed successfully."
 
-      # Install system dependencies for GUI building
+      # --- END PRE-INSTALLED SDK/NDK SETUP ---
       - name: Install system dependencies
         run: |
           sudo apt-get update
