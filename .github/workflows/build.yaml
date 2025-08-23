@@ -147,10 +147,10 @@ jobs:
         run: |
           # Define versions and paths
           SDK_TOOLS_VERSION="11076708" # cmdline-tools version
-          NDK_VERSION="25.1.8937393"
+          # NDK_VERSION="25.1.8937393" # We will let sdkmanager handle this
           ANDROID_HOME="$HOME/android-sdk"
           SDK_TOOLS_ZIP="commandlinetools-linux-${SDK_TOOLS_VERSION}_latest.zip"
-          NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
+          # NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip" # Remove this
 
           echo "ANDROID_HOME will be: $ANDROID_HOME"
 
@@ -161,11 +161,8 @@ jobs:
           echo "Downloading Android SDK Command-line Tools..."
           wget -q "https://dl.google.com/android/repository/${SDK_TOOLS_ZIP}" -O "$HOME/sdk-tools.zip"
           echo "Extracting SDK Command-line Tools..."
-          # Extract to a temporary location first
           mkdir -p "$HOME/sdk-tmp"
           unzip -q "$HOME/sdk-tools.zip" -d "$HOME/sdk-tmp"
-          # Move 'cmdline-tools' directory into SDK root correctly
-          # It should be $ANDROID_HOME/cmdline-tools/latest/
           mkdir -p "$ANDROID_HOME/cmdline-tools"
           mv "$HOME/sdk-tmp/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
           rm -f "$HOME/sdk-tools.zip"
@@ -178,65 +175,63 @@ jobs:
 
           # Accept licenses
           echo "Accepting Android SDK licenses..."
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true # Ignore potential non-zero exit
+          # Improved license acceptance to avoid "Broken pipe" warning
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
 
-          # --- Install essential SDK packages ---
-          echo "Installing essential SDK packages (platform-tools, platforms, build-tools)..."
+          # --- Install essential SDK packages INCLUDING NDK ---
+          # Add the NDK package to the list for sdkmanager to install
+          echo "Installing essential SDK packages (platform-tools, platforms, build-tools, NDK)..."
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
-            > /dev/null
-          # Suppress output to reduce log size
+            "ndk;25.1.8937393" \
+            > /dev/null # Suppress output to reduce log size
 
-          # --- Install NDK ---
-          echo "Downloading Android NDK $NDK_VERSION..."
-          wget -q "https://dl.google.com/android/repository/${NDK_ZIP}" -O "$HOME/ndk.zip"
-          echo "Extracting Android NDK..."
-          unzip -q "$HOME/ndk.zip" -d "$HOME"
-          # Move NDK to standard location within SDK
-          mv "$HOME/android-ndk-${NDK_VERSION}" "$ANDROID_HOME/ndk/${NDK_VERSION}"
-          rm -f "$HOME/ndk.zip"
-
-          # Set NDK environment variables
-          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/${NDK_VERSION}" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> $GITHUB_ENV
+          # --- Set NDK environment variables ---
+          # After installation, determine the exact NDK path
+          # sdkmanager usually installs it under $ANDROID_HOME/ndk/
+          # List the contents to find the installed version directory
+          if [ -d "$ANDROID_HOME/ndk" ]; then
+            INSTALLED_NDK_DIR=$(ls -1 "$ANDROID_HOME/ndk" | head -n 1)
+            if [ -n "$INSTALLED_NDK_DIR" ]; then
+              echo "Found installed NDK directory: $INSTALLED_NDK_DIR"
+              echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$INSTALLED_NDK_DIR" >> $GITHUB_ENV
+              echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$INSTALLED_NDK_DIR" >> $GITHUB_ENV
+            else
+              echo "::error::NDK directory is empty after installation!"
+              ls -la "$ANDROID_HOME/ndk/" || echo "Could not list NDK directory"
+              exit 1
+            fi
+          else
+            echo "::error::NDK directory was not created by sdkmanager!"
+            ls -la "$ANDROID_HOME/" || echo "Could not list SDK root directory"
+            exit 1
+          fi
 
           # Explicitly unset ANDROID_SDK_ROOT to avoid deprecation warning and conflicts
           echo "ANDROID_SDK_ROOT=" >> $GITHUB_ENV
 
-          # Verify key files exist
-          if [ ! -f "$ANDROID_HOME/source.properties" ]; then
-            # The root SDK directory might not have source.properties, but cmdline-tools or packages might.
-            # Let's check a core installed component.
-            if [ -f "$ANDROID_HOME/platform-tools/source.properties" ]; then
-                echo "::notice::SDK source.properties found in platform-tools."
-            else
-                echo "::warning::source.properties not found in expected SDK locations. This might still cause issues."
-            fi
-          else
-            echo "::notice::SDK source.properties found in root."
-          fi
-
-          if [ ! -f "$ANDROID_HOME/ndk/${NDK_VERSION}/source.properties" ]; then
-              echo "::error::NDK source.properties NOT found! Installation likely failed."
-              ls -la "$ANDROID_HOME/ndk/${NDK_VERSION}/" || echo "NDK directory listing failed."
-              exit 1
-          else
-              echo "::notice::NDK source.properties found."
-          fi
-
+          # --- Verification ---
           if [ ! -d "$ANDROID_HOME/build-tools" ]; then
-              echo "::error::build-tools directory NOT found! SDK installation likely failed."
+              echo "::error::build-tools directory NOT found!"
               ls -la "$ANDROID_HOME/" || echo "SDK root directory listing failed."
               exit 1
           else
               echo "::notice::build-tools directory found."
           fi
 
-          echo "::notice::Manual SDK/NDK installation and configuration completed successfully."
+          NDK_SOURCE_PROPERTIES="$ANDROID_NDK_HOME/source.properties"
+          if [ ! -f "$NDK_SOURCE_PROPERTIES" ]; then
+              echo "::error::NDK source.properties NOT found at $NDK_SOURCE_PROPERTIES!"
+              ls -la "$ANDROID_NDK_HOME/" || echo "NDK directory listing failed."
+              exit 1
+          else
+              echo "::notice::NDK source.properties found."
+          fi
 
-      # --- END MANUAL SDK/NDK INSTALLATION ---
+          echo "::notice::Manual SDK/NDK installation and configuration completed successfully."
+            # --- END MANUAL SDK/NDK INSTALLATION ---
 
       # Install system dependencies for GUI building
       - name: Install system dependencies
