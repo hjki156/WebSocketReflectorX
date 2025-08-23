@@ -87,9 +87,8 @@ min_sdk_version = 21
 
 # 应用图标
 icon = "arts/logo.png"
-
-# 资源文件夹
-assets = ["assets", "fonts", "arts"]
+# 资源文件夹 (指向包含所有资源的单一目录)
+assets = "android/assets" # <-- 修改为单一字符串路径
 
 # Android Manifest 配置
 [[package.metadata.android.application.activity]]
