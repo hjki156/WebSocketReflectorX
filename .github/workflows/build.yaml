@@ -263,19 +263,64 @@ jobs:
         run: |
           cargo install cargo-apk
 
-      # Build APK for aarch64 (ARM64)
+          # Build APK for aarch64 (ARM64)
       - name: Build APK for aarch64
         run: |
+          # Explicitly export environment variables for this step's shell
+          # This ensures they are available to cargo-apk and any subprocesses it spawns.
+          export ANDROID_HOME="/usr/local/lib/android/sdk"
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/25.1.8937393"
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/25.1.8937393"
+          # Explicitly unset ANDROID_SDK_ROOT for this shell session
+          unset ANDROID_SDK_ROOT
+
+          # Debug: Print the variables to confirm
+          echo "Debug - ANDROID_HOME: $ANDROID_HOME"
+          echo "Debug - ANDROID_NDK_ROOT: $ANDROID_NDK_ROOT"
+          echo "Debug - ANDROID_SDK_ROOT (should be empty): '$ANDROID_SDK_ROOT'"
+
+          # Verify build-tools path exists in this shell context
+          if [ ! -d "$ANDROID_HOME/build-tools" ]; then
+            echo "::error::build-tools directory NOT found at '$ANDROID_HOME/build-tools' in this build step!"
+            echo "Contents of ANDROID_HOME:"
+            ls -la "$ANDROID_HOME"
+            exit 1
+          else
+            echo "::notice::build-tools directory confirmed present for build step."
+          fi
+
           cd crates/desktop
           cargo apk build --release --target aarch64-linux-android
-        # Environment variables are now set in GITHUB_ENV
+        # Do NOT use the 'env:' section here as we are setting variables explicitly in the run script
 
       # Build APK for armv7 (ARM32)
       - name: Build APK for armv7
         run: |
+          # Explicitly export environment variables for this step's shell
+          export ANDROID_HOME="/usr/local/lib/android/sdk"
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/25.1.8937393"
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/25.1.8937393"
+          # Explicitly unset ANDROID_SDK_ROOT for this shell session
+          unset ANDROID_SDK_ROOT
+
+          # Debug: Print the variables to confirm
+          echo "Debug - ANDROID_HOME: $ANDROID_HOME"
+          echo "Debug - ANDROID_NDK_ROOT: $ANDROID_NDK_ROOT"
+          echo "Debug - ANDROID_SDK_ROOT (should be empty): '$ANDROID_SDK_ROOT'"
+
+          # Verify build-tools path exists in this shell context
+          if [ ! -d "$ANDROID_HOME/build-tools" ]; then
+            echo "::error::build-tools directory NOT found at '$ANDROID_HOME/build-tools' in this build step!"
+            echo "Contents of ANDROID_HOME:"
+            ls -la "$ANDROID_HOME"
+            exit 1
+          else
+            echo "::notice::build-tools directory confirmed present for build step."
+          fi
+
           cd crates/desktop
           cargo apk build --release --target armv7-linux-androideabi
-        # Environment variables are now set in GITHUB_ENV
+        # Do NOT use the 'env:' section here as we are setting variables explicitly in the run script
 
       # Find and rename APKs with version
       - name: Find and rename APKs
