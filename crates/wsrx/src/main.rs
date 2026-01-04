@@ -1,13 +1,13 @@
 use std::process;
 
-use clap::{Parser, command};
+use clap::Parser;
 use rustls::crypto;
 use tracing::{error, info, warn};
 
 #[cfg(feature = "client")]
 mod cli;
 
-/// wsrx is a controlled WS-TCP tunnel for Ret2Shell platform.
+/// wsrx is a controlled WS-TCP tunnel for CTF platforms like ret2shell, GZCTF and CDSCTF etc..
 #[derive(Parser)]
 #[command(name = "wsrx", bin_name = "wsrx", version, about)]
 enum WsrxCli {
