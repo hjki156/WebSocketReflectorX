@@ -18,13 +18,15 @@ use tower_http::{
 use tracing::{Span, debug};
 use wsrx::utils::create_tcp_listener;
 
+use super::latency_worker::update_instance_latency;
 use crate::{
     bridges::ui_state::sync_scoped_instance,
-    daemon::model::{FeatureFlags, InstanceData, ProxyInstance, ScopeData, ServerState},
+    daemon::{
+        latency_worker::update_instance_state,
+        model::{FeatureFlags, InstanceData, ProxyInstance, ScopeData, ServerState},
+    },
     ui::{Instance, InstanceBridge, Scope, ScopeBridge},
 };
-
-use super::latency_worker::update_instance_latency;
 
 pub fn router(state: ServerState) -> axum::Router {
     let cors_state = state.clone();
@@ -168,9 +170,7 @@ async fn launch_instance(
     if instances.iter().any(|i| i.local.as_str() == local) {
         return Err((
             StatusCode::BAD_REQUEST,
-            format!(
-                "The local address {local} is already taken by another instance"
-            ),
+            format!("The local address {local} is already taken by another instance"),
         ));
     }
 
@@ -202,7 +202,10 @@ async fn launch_instance(
 
     tokio::spawn(async move {
         let client = reqwest::Client::new();
-        update_instance_latency(state_clone, instance, &client).await;
+        match update_instance_latency(&instance, &client).await {
+            Ok(elapsed) => update_instance_state(state_clone, &instance, elapsed).await,
+            Err(_) => update_instance_state(state_clone, &instance, -1).await,
+        };
     });
 
     match slint::invoke_from_event_loop(move || {
@@ -338,10 +341,16 @@ async fn request_control(
     let json_body = axum::Json::<ScopeData>::from_request(req, &state)
         .await
         .ok();
-    let (scope_name, scope_features) = if let Some(json_body) = json_body {
-        (json_body.name.clone(), json_body.features)
+    let (scope_name, scope_features, scope_settings) = if let Some(Json(ScopeData {
+        name,
+        features,
+        settings,
+        ..
+    })) = json_body
+    {
+        (name, features, settings)
     } else {
-        (req_scope.clone(), FeatureFlags::Basic)
+        (req_scope.clone(), FeatureFlags::Basic, Default::default())
     };
 
     let mut scopes = state.scopes.write().await;
@@ -358,6 +367,7 @@ async fn request_control(
         host: req_scope.clone(),
         state: "pending".to_string(),
         features: scope_features,
+        settings: scope_settings.clone(),
     };
     scopes.push(scope);
 
@@ -374,6 +384,9 @@ async fn request_control(
             name: scope_name.into(),
             state: "pending".into(),
             features: scope_features.to_shared_string(),
+            settings: serde_json::to_string(&scope_settings)
+                .unwrap_or("{}".to_string())
+                .into(),
         };
         scopes.push(scope);
     }) {
@@ -423,6 +436,9 @@ async fn update_website_info(
                 name: scope_data.name.clone().into(),
                 state: state_d.into(),
                 features: scope_data.features.to_shared_string(),
+                settings: serde_json::to_string(&scope_data.settings)
+                    .unwrap_or("{}".to_string())
+                    .into(),
             };
             scopes.set_row_data(index, scope);
         }) {

@@ -1,16 +1,17 @@
-use crate::{
-    bridges::ui_state::sync_scoped_instance,
-    daemon::{
-        default_label,
-        model::{ProxyInstance, ServerState},
-    },
-    ui::{Instance, InstanceBridge, MainWindow, Scope, ScopeBridge},
-};
 use slint::{ComponentHandle, Model, ToSharedString, VecModel};
 use tracing::{debug, info, warn};
 use wsrx::utils::create_tcp_listener;
 
 use super::latency_worker::update_instance_latency;
+use crate::{
+    bridges::ui_state::sync_scoped_instance,
+    daemon::{
+        default_label,
+        latency_worker::update_instance_state,
+        model::{ProxyInstance, ServerState},
+    },
+    ui::{Instance, InstanceBridge, MainWindow, Scope, ScopeBridge},
+};
 
 pub async fn on_instance_add(state: &ServerState, remote: &str, local: &str) {
     let listener = match create_tcp_listener(local).await {
@@ -44,7 +45,10 @@ pub async fn on_instance_add(state: &ServerState, remote: &str, local: &str) {
 
     tokio::spawn(async move {
         let client = reqwest::Client::new();
-        update_instance_latency(state_clone, instance_data, &client).await;
+        match update_instance_latency(&instance_data, &client).await {
+            Ok(elapsed) => update_instance_state(state_clone, &instance_data, elapsed).await,
+            Err(_) => update_instance_state(state_clone, &instance_data, -1).await,
+        };
     });
 
     let label = instance.label.clone();
@@ -120,11 +124,13 @@ pub async fn on_scope_allow(state: &ServerState, ui: slint::Weak<MainWindow>, sc
     let mut scopes = state.scopes.write().await;
     let scope_name;
     let scope_features;
+    let scope_settings;
 
     if let Some(scope) = scopes.iter_mut().find(|s| s.host == scope_host) {
         scope.state = "allowed".to_string();
         scope_name = scope.name.clone();
         scope_features = scope.features;
+        scope_settings = scope.settings.clone();
     } else {
         return;
     }
@@ -151,6 +157,9 @@ pub async fn on_scope_allow(state: &ServerState, ui: slint::Weak<MainWindow>, sc
                     name: scope_name.into(),
                     state: "allowed".into(),
                     features: scope_features.to_shared_string(),
+                    settings: serde_json::to_string(&scope_settings)
+                        .unwrap_or("{}".to_string())
+                        .into(),
                 },
             );
         }
