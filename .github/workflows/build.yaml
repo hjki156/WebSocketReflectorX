@@ -28,7 +28,6 @@ env:
 jobs:
   build-android-cli:
     name: "Build for Android (aarch64) for terminal"
-    if: false  
     # Temporarily disable this job
     # To re-enable, change 'false' to 'true' or remove this line
     runs-on: ubuntu-22.04
@@ -112,6 +111,7 @@ jobs:
 
   build-android-gui:
     name: Build Android GUI
+    if: false
     runs-on: ubuntu-latest
 
     steps:
